@@ -1,0 +1,356 @@
+import { useEffect, useMemo, useState } from 'react';
+
+const formatCurrency = (amount) =>
+  new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    maximumFractionDigits: 0,
+  }).format(amount);
+
+const defaultPlanForm = {
+  name: 'Custom plan',
+  amount: 49,
+};
+
+export default function App() {
+  const [plans, setPlans] = useState([]);
+  const [inventory, setInventory] = useState([]);
+  const [metrics, setMetrics] = useState({});
+  const [insights, setInsights] = useState(null);
+  const [selectedPlanId, setSelectedPlanId] = useState('growth');
+  const [checkoutMessage, setCheckoutMessage] = useState('');
+  const [isSubscribed, setIsSubscribed] = useState(false);
+  const [planForm, setPlanForm] = useState(defaultPlanForm);
+
+  useEffect(() => {
+    const loadData = async () => {
+      const [plansRes, inventoryRes] = await Promise.all([
+        fetch('/api/plans'),
+        fetch('/api/dashboard'),
+      ]);
+
+      const planData = await plansRes.json();
+      const dashboardData = await inventoryRes.json();
+
+      setPlans(planData.plans || []);
+      setSelectedPlanId((planData.plans || [])[1]?.id || 'starter');
+      setInventory(dashboardData.items || []);
+      setMetrics(dashboardData.metrics || {});
+      setInsights(dashboardData.insights || null);
+    };
+
+    loadData();
+  }, []);
+
+  const selectedPlan = useMemo(
+    () => plans.find((plan) => plan.id === selectedPlanId) || plans[0],
+    [plans, selectedPlanId],
+  );
+
+  const startFreeTrial = async () => {
+    try {
+      const response = await fetch('/api/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ planId: selectedPlan?.id || 'growth', email: 'demo@inventoryai.app' }),
+      });
+
+      const data = await response.json();
+
+      setIsSubscribed(Boolean(data.subscription || data.demo));
+      setCheckoutMessage(
+        data.demo
+          ? `Demo subscription activated: ${data.subscription.plan} with a 10-day free trial.`
+          : 'Subscription checkout started successfully.',
+      );
+    } catch (error) {
+      setCheckoutMessage('Could not start the subscription. Please try again.');
+    }
+  };
+
+  const createCustomPlan = async () => {
+    try {
+      const response = await fetch('/api/plans/custom', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: planForm.name, amount: planForm.amount }),
+      });
+
+      const data = await response.json();
+      if (data.plan) {
+        setPlans(data.plans || []);
+        setSelectedPlanId(data.plan.id);
+      }
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const lowStockItems = inventory.filter((item) => item.stock <= item.minStock);
+
+  return (
+    <div className="app-shell">
+      <header className="topbar">
+        <div className="brand-wrap">
+          <div className="brand-mark">I</div>
+          <div>
+            <div className="brand-name">Inventory AI</div>
+            <span className="brand-tag">Smart stock, sharper decisions</span>
+          </div>
+        </div>
+
+        <nav className="nav">
+          <a href="#features">Features</a>
+          <a href="#pricing">Pricing</a>
+          <a href="#insights">Insights</a>
+          <button className="ghost-btn">Book demo</button>
+        </nav>
+      </header>
+
+      <main>
+        <section className="hero">
+          <div className="hero-copy">
+            <span className="eyebrow">AI inventory operations</span>
+            <h1>Plan smarter inventory, restock faster, and grow without surprises.</h1>
+            <p>
+              Inventory AI helps you manage stock levels, surface sales trends, and automate restock
+              decisions with a clean dashboard built for modern teams.
+            </p>
+
+            <div className="cta-row">
+              <button className="primary-btn" onClick={startFreeTrial}>Start free 10-day trial</button>
+              <button className="secondary-btn">Watch demo</button>
+            </div>
+
+            <div className="social-proof">
+              <div>
+                <strong>18k+</strong>
+                <span>Products tracked</span>
+              </div>
+              <div>
+                <strong>96.8%</strong>
+                <span>Forecast accuracy</span>
+              </div>
+              <div>
+                <strong>4.9/5</strong>
+                <span>Customer rating</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="hero-panel">
+            <div className="panel-card stat-card">
+              <div className="stat-label">Monthly revenue</div>
+              <div className="stat-value">{formatCurrency(metrics.revenueThisMonth || 128400)}</div>
+              <div className="trend up">+18.7% vs last month</div>
+            </div>
+
+            <div className="mini-panel">
+              <div className="mini-head">
+                <span>Stock pulse</span>
+                <span className="badge success">Healthy</span>
+              </div>
+
+              <div className="bar-stack">
+                <div className="bar-row">
+                  <span>Electronics</span>
+                  <div className="bar"><i style={{ width: '82%' }} /></div>
+                </div>
+                <div className="bar-row">
+                  <span>Office</span>
+                  <div className="bar"><i style={{ width: '61%' }} /></div>
+                </div>
+                <div className="bar-row">
+                  <span>Home</span>
+                  <div className="bar"><i style={{ width: '73%' }} /></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="metrics-grid">
+          <div className="metric-box">
+            <span className="metric-title">Products</span>
+            <strong>{metrics.totalProducts || 0}</strong>
+            <small>Tracked across all locations</small>
+          </div>
+          <div className="metric-box">
+            <span className="metric-title">Available stock</span>
+            <strong>{metrics.availableStock || 0}</strong>
+            <small>Units ready to sell</small>
+          </div>
+          <div className="metric-box">
+            <span className="metric-title">Low stock</span>
+            <strong>{metrics.lowStockItems || 0}</strong>
+            <small>Items need attention</small>
+          </div>
+          <div className="metric-box">
+            <span className="metric-title">Forecast</span>
+            <strong>{formatCurrency(insights?.summary?.revenueForecast || 142000)}</strong>
+            <small>Projected sales this month</small>
+          </div>
+        </section>
+
+        <section id="features" className="feature-section">
+          <div className="section-heading">
+            <span className="eyebrow">Why teams switch</span>
+            <h2>Everything you need to run inventory like a pro.</h2>
+          </div>
+
+          <div className="feature-grid">
+            <article className="feature-card">
+              <div className="feature-icon">⚡</div>
+              <h3>AI-driven recommendations</h3>
+              <p>See which SKUs need reordering, what is trending, and where to reduce dead stock.</p>
+            </article>
+            <article className="feature-card">
+              <div className="feature-icon">📦</div>
+              <h3>Stock visibility</h3>
+              <p>Monitor every product in real time and identify shortages before they impact revenue.</p>
+            </article>
+            <article className="feature-card">
+              <div className="feature-icon">💳</div>
+              <h3>Stripe subscriptions</h3>
+              <p>Set your own monthly pricing and offer a free 10-day trial to new customers.</p>
+            </article>
+          </div>
+        </section>
+
+        <section id="pricing" className="pricing-section">
+          <div className="section-heading">
+            <span className="eyebrow">Simple pricing</span>
+            <h2>Choose a plan that fits your inventory scale.</h2>
+          </div>
+
+          <div className="pricing-grid">
+            {plans.map((plan) => (
+              <div key={plan.id} className={`pricing-card ${plan.popular ? 'featured' : ''}`}>
+                {plan.popular && <span className="popular-label">Most popular</span>}
+                <h3>{plan.name}</h3>
+                <p>{plan.description}</p>
+                <div className="price-row">
+                  <span className="currency">$</span>
+                  <span className="price">{plan.amount}</span>
+                  <span className="period">/month</span>
+                </div>
+                <div className="trial-copy">Includes {plan.trialDays || 10} day free trial</div>
+                <ul>
+                  {plan.features.map((feature) => (
+                    <li key={feature}>{feature}</li>
+                  ))}
+                </ul>
+                <button className="plan-btn" onClick={() => setSelectedPlanId(plan.id)}>
+                  {selectedPlanId === plan.id ? 'Selected' : 'Choose plan'}
+                </button>
+              </div>
+            ))}
+          </div>
+
+          <div className="custom-plan-box">
+            <div>
+              <h3>Create a custom monthly plan</h3>
+              <p>Set your own monthly amount and let customers try it free for 10 days.</p>
+            </div>
+
+            <div className="custom-plan-form">
+              <input
+                value={planForm.name}
+                onChange={(event) => setPlanForm({ ...planForm, name: event.target.value })}
+                placeholder="Plan name"
+              />
+              <input
+                type="number"
+                min="1"
+                value={planForm.amount}
+                onChange={(event) =>
+                  setPlanForm({ ...planForm, amount: Number(event.target.value) || 0 })
+                }
+                placeholder="Monthly amount"
+              />
+              <button className="primary-btn small" onClick={createCustomPlan}>Add custom plan</button>
+            </div>
+          </div>
+        </section>
+
+        <section id="insights" className="dashboard-section">
+          <div className="section-heading left">
+            <span className="eyebrow">Operations dashboard</span>
+            <h2>Revenue and stock insights</h2>
+          </div>
+
+          <div className="dashboard-grid">
+            <div className="panel">
+              <h3>Inventory status</h3>
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Product</th>
+                      <th>Stock</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {inventory.map((item) => (
+                      <tr key={item.id}>
+                        <td>{item.name}</td>
+                        <td>{item.stock}</td>
+                        <td>
+                          <span className={`status-pill ${item.status.toLowerCase()}`}>
+                            {item.status}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="panel insights-panel">
+              <h3>AI recommendations</h3>
+              {insights && (
+                <>
+                  <div className="insight-summary">
+                    <div>
+                      <span>Best seller</span>
+                      <strong>{insights.bestSeller?.name}</strong>
+                    </div>
+                    <div>
+                      <span>Service level</span>
+                      <strong>{insights.summary?.serviceLevel}%</strong>
+                    </div>
+                  </div>
+
+                  <ul className="recommendation-list">
+                    {insights.recommendations.map((rec) => (
+                      <li key={rec}>{rec}</li>
+                    ))}
+                  </ul>
+
+                  <div className="alert-stack">
+                    {insights.alerts.map((alert) => (
+                      <div key={alert.title} className="alert-box">
+                        <strong>{alert.title}</strong>
+                        <p>{alert.detail}</p>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <footer className="footer">
+        <div>
+          <strong>Inventory AI</strong>
+          <span>© 2026 | All rights reserved</span>
+        </div>
+        {checkoutMessage && <div className="checkout-note">{checkoutMessage}</div>}
+      </footer>
+    </div>
+  );
+}
